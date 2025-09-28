@@ -203,7 +203,23 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # Compute sample mean and variance
+        sample_mean = np.mean(x, axis=0)  # Shape: (D,)
+        sample_var = np.var(x, axis=0)    # Shape: (D,)
+        
+        # Normalize the data
+        x_centered = x - sample_mean      # Shape: (N, D)
+        x_norm = x_centered / np.sqrt(sample_var + eps)  # Shape: (N, D)
+        
+        # Scale and shift
+        out = gamma * x_norm + beta       # Shape: (N, D)
+        
+        # Update running averages
+        running_mean = momentum * running_mean + (1 - momentum) * sample_mean
+        running_var = momentum * running_var + (1 - momentum) * sample_var
+        
+        # Cache values needed for backward pass
+        cache = (x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -218,7 +234,14 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # Use running statistics to normalize
+        x_norm = (x - running_mean) / np.sqrt(running_var + eps)
+        
+        # Scale and shift
+        out = gamma * x_norm + beta
+        
+        # No cache needed for test mode backward pass
+        cache = None
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################

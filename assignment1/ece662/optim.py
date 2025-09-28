@@ -69,7 +69,11 @@ def sgd_momentum(w, dw, config=None):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # Update velocity: v = momentum * v - learning_rate * dw
+    v = config["momentum"] * v - config["learning_rate"] * dw
+    
+    # Update weights: next_w = w + v
+    next_w = w + v
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -107,7 +111,11 @@ def rmsprop(w, dw, config=None):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # Update cache: cache = decay_rate * cache + (1 - decay_rate) * dw^2
+    config['cache'] = config['decay_rate'] * config['cache'] + (1 - config['decay_rate']) * (dw ** 2)
+    
+    # Update weights: w = w - learning_rate * dw / (sqrt(cache) + epsilon)
+    next_w = w - config['learning_rate'] * dw / (np.sqrt(config['cache']) + config['epsilon'])
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -152,7 +160,29 @@ def adam(w, dw, config=None):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # Increment time step first (as noted in the comment)
+    # t = t + 1
+    config['t'] += 1
+    
+    # Update biased first moment estimate (momentum)
+    # m_t = β₁ * m_{t-1} + (1 - β₁) * g_t
+    config['m'] = config['beta1'] * config['m'] + (1 - config['beta1']) * dw
+    
+    # Update biased second moment estimate (RMSprop)
+    # v_t = β₂ * v_{t-1} + (1 - β₂) * g_t²
+    config['v'] = config['beta2'] * config['v'] + (1 - config['beta2']) * (dw ** 2)
+    
+    # Compute bias-corrected first moment estimate
+    # m̂_t = m_t / (1 - β₁ᵗ)
+    m_hat = config['m'] / (1 - config['beta1'] ** config['t'])
+    
+    # Compute bias-corrected second moment estimate
+    # v̂_t = v_t / (1 - β₂ᵗ)
+    v_hat = config['v'] / (1 - config['beta2'] ** config['t'])
+    
+    # Update weights
+    # θ_{t+1} = θ_t - α * m̂_t / (√v̂_t + ε)
+    next_w = w - config['learning_rate'] * m_hat / (np.sqrt(v_hat) + config['epsilon'])
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
