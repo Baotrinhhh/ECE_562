@@ -644,7 +644,17 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # Inverted dropout implementation:
+        # 1. Create a random mask with probability p of keeping each neuron
+        # 2. Scale the kept neurons by 1/p to maintain expected value
+        # This ensures test-time behavior doesn't need scaling
+        
+        # Generate random mask: 1 where we keep neurons (prob p), 0 where we drop
+        mask = (np.random.rand(*x.shape) < p).astype(x.dtype)
+        
+        # Apply inverted dropout: multiply by mask and scale by 1/p
+        # This maintains the expected value of activations
+        out = x * mask / p
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -656,7 +666,10 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # Test phase: no dropout, just pass input through unchanged
+        # The inverted scaling during training ensures we don't need 
+        # any scaling at test time
+        out = x
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -687,7 +700,7 @@ def dropout_backward(dout, cache):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+         dx = dout * mask / dropout_param["p"]
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
