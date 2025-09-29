@@ -476,30 +476,30 @@ def layernorm_forward(x, gamma, beta, ln_param):
     
     N, D = x.shape
     
-    # Step 1: Transpose to convert layer norm → batch norm problem
+    # Transpose to convert layer norm → batch norm problem
     # x.T shape: (D, N) - now each "sample" is a feature, each "feature" is a data point
     x_T = x.T  # Shape: (D, N)
     
-    # Step 2: Apply batch normalization logic on transposed data
+    # Apply batch normalization logic on transposed data
     # Compute mean and variance across the "batch" dimension (axis=0)
     # This computes statistics across all data points for each feature
     sample_mean = np.mean(x_T, axis=0)  # μ ∈ R^N, mean for each data point
     sample_var = np.var(x_T, axis=0)    # σ² ∈ R^N, variance for each data point
     
-    # Step 3: Normalize the transposed data
+    # Normalize the transposed data
     # x̂ = (x - μ) / √(σ² + ε)
     x_T_centered = x_T - sample_mean     # Shape: (D, N)
     x_T_norm = x_T_centered / np.sqrt(sample_var + eps)  # Shape: (D, N)
     
-    # Step 4: Transpose back to original orientation
+    # Transpose back to original orientation
     x_centered = x_T_centered.T          # Shape: (N, D)
     x_norm = x_T_norm.T                  # Shape: (N, D)
     
-    # Step 5: Apply learnable affine transformation
-    # y = γ ⊙ x̃ + β  (same as batch norm)
+    # Apply learnable affine transformation
+    # y = γ * x̃ + β  (same as batch norm)
     out = gamma * x_norm + beta          # Shape: (N, D)
     
-    # Step 6: Cache values needed for backward pass
+    # Cache values needed for backward pass
     # Note: we store the non-transposed versions for easier backward computation
     cache = (x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps)
     
@@ -541,7 +541,62 @@ def layernorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # Extract cached values from forward pass
+    x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps = cache
+    N, D = x.shape
+    
+    # Key insight: Use the same transpose trick as in forward pass
+    # Layer norm normalizes across features (D) for each sample (N)
+    # We can transpose and use batch norm backward logic, then transpose back
+    
+    # Gradient w.r.t. β (shift parameter)
+    # ∂L/∂β = ∂L/∂y * ∂y/∂β = ∂L/∂y * 1 = Σ(∂L/∂y_i) over all samples
+    # Since y_ij = γ_j * x̃_ij + β_j, we have ∂y_ij/∂β_j = 1
+    dbeta = np.sum(dout, axis=0)  # Shape: (D,)
+    
+    # Gradient w.r.t. γ (scale parameter)
+    # ∂L/∂γ = ∂L/∂y * ∂y/∂γ = ∂L/∂y * x̃ = Σ(∂L/∂y_ij * x̃_ij) over all samples
+    # Since y_ij = γ_j * x̃_ij + β_j, we have ∂y_ij/∂γ_j = x̃_ij
+    dgamma = np.sum(dout * x_norm, axis=0)  # Shape: (D,)
+    
+    # For dx, we need to apply the transpose trick
+    # Transpose dout and apply batch norm backward logic, then transpose back
+    dout_T = dout.T  # Shape: (D, N)
+    x_norm_T = x_norm.T  # Shape: (D, N)
+    x_centered_T = x_centered.T  # Shape: (D, N)
+    
+    # Apply batch norm backward logic on transposed data
+    # Gradient w.r.t. normalized input (transposed)
+    dx_norm_T = dout_T * gamma[:, np.newaxis]  # Shape: (D, N), broadcast gamma
+    
+    # Gradient w.r.t. variance (for each sample, computed across features)
+    # In layer norm: σ²_i = (1/D) * Σⱼ (x_ij - μ_i)² 
+    # ∂σ²_i/∂x̂_ij = 2*x̂_ij/D
+    dvar_T = np.sum(dx_norm_T * x_centered_T, axis=0) * -0.5 * np.power(sample_var + eps, -1.5)  # Shape: (N,)
+    
+    # Gradient w.r.t. centered input (transposed)
+    # Path 1: direct through normalization
+    # Path 2: through variance
+    dx_centered_T = dx_norm_T / np.sqrt(sample_var + eps) + dvar_T * 2.0 * x_centered_T / D  # Shape: (D, N)
+    
+    # Gradient w.r.t. mean (for each sample, computed across features)
+    # In layer norm: μ_i = (1/D) * Σⱼ x_ij
+    # ∂μ_i/∂x_ij = 1/D
+    dmean_T = -np.sum(dx_centered_T, axis=0)  # Shape: (N,)
+    
+    # Final gradient w.r.t. input (transposed)
+    # Path 1: direct through centering
+    # Path 2: through mean  
+    dx_T = dx_centered_T + dmean_T / D  # Shape: (D, N)
+    
+    # Transpose back to original orientation
+    dx = dx_T.T  # Shape: (N, D)
+    
+    # Mathematical summary for layer normalization:
+    # For each sample i: μᵢ = (1/D)Σⱼ xᵢⱼ, σ²ᵢ = (1/D)Σⱼ(xᵢⱼ - μᵢ)²
+    # Normalization: x̃ᵢⱼ = (xᵢⱼ - μᵢ) / √(σ²ᵢ + ε)
+    # Output: yᵢⱼ = γⱼ * x̃ᵢⱼ + βⱼ
+    # The transpose trick allows us to reuse batch norm backward computation
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
