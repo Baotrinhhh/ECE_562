@@ -203,22 +203,33 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        # Compute sample mean and variance
-        sample_mean = np.mean(x, axis=0)  # Shape: (D,)
-        sample_var = np.var(x, axis=0)    # Shape: (D,)
+        # Compute sample mean and variance over the minibatch
+        # μ_B = (1/m) * Σ_{i=1}^m x_i   where m = N (batch size)
+        sample_mean = np.mean(x, axis=0)  # μ_B ∈ R^D, Shape: (D,)
         
-        # Normalize the data
-        x_centered = x - sample_mean      # Shape: (N, D)
-        x_norm = x_centered / np.sqrt(sample_var + eps)  # Shape: (N, D)
+        # σ²_B = (1/m) * Σ_{i=1}^m (x_i - μ_B)²
+        sample_var = np.var(x, axis=0)    # σ²_B ∈ R^D, Shape: (D,)
         
-        # Scale and shift
-        out = gamma * x_norm + beta       # Shape: (N, D)
+        # Center the data
+        # x̂_i = x_i - μ_B
+        x_centered = x - sample_mean      # x̂ ∈ R^{N×D}, Shape: (N, D)
         
-        # Update running averages
+        # Normalize by standard deviation
+        # x̃_i = x̂_i / √(σ²_B + ε) = (x_i - μ_B) / √(σ²_B + ε)
+        x_norm = x_centered / np.sqrt(sample_var + eps)  # x̃ ∈ R^{N×D}, Shape: (N, D)
+        
+        # Scale and shift (learnable affine transformation)
+        # y_i = γ * x̃_i + β   
+        out = gamma * x_norm + beta       # y ∈ R^{N×D}, Shape: (N, D)
+        
+        #  Update running statistics using exponential moving average
+        # μ_running ← α·μ_running + (1-α)·μ_B   where α = momentum
+        # σ²_running ← α·σ²_running + (1-α)·σ²_B
         running_mean = momentum * running_mean + (1 - momentum) * sample_mean
         running_var = momentum * running_var + (1 - momentum) * sample_var
         
-        # Cache values needed for backward pass
+        # Cache intermediate values for backward pass computation
+        # Need: x, x̂, x̃, μ_B, σ²_B, γ, β, ε for gradient calculations
         cache = (x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -234,13 +245,16 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        # Use running statistics to normalize
+        # Test-time batch normalization uses pre-computed running statistics
+        # Normalize using running statistics
+        # x̃_i = (x_i - μ_running) / √(σ²_running + ε)
         x_norm = (x - running_mean) / np.sqrt(running_var + eps)
         
-        # Scale and shift
+        # Apply learnable affine transformation
+        # y_i = γ * x̃_i + β
         out = gamma * x_norm + beta
         
-        # No cache needed for test mode backward pass
+        # No cache needed for test mode 
         cache = None
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -283,7 +297,52 @@ def batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # Extract cached values from forward pass
+    x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps = cache
+    N, D = x.shape
+    
+    # Gradient w.r.t. β (bias parameter)
+    # ∂L/∂β = ∂L/∂y * ∂y/∂β = ∂L/∂y * 1 = Σ(∂L/∂y_i) over all i
+    # Since y_i = γ*x̃_i + β, we have ∂y_i/∂β = 1
+    dbeta = np.sum(dout, axis=0)  # Shape: (D,)
+    
+    # Gradient w.r.t. γ (scale parameter)  
+    # ∂L/∂γ = ∂L/∂y * ∂y/∂γ = ∂L/∂y * x̃ = Σ(∂L/∂y_i * x̃_i) over all i
+    # Since y_i = γ*x̃_i + β, we have ∂y_i/∂γ = x̃_i
+    dgamma = np.sum(dout * x_norm, axis=0)  # Shape: (D,)
+    
+    # Gradient w.r.t. x̃ (normalized input)
+    # ∂L/∂x̃ = ∂L/∂y * ∂y/∂x̃ = ∂L/∂y * γ
+    # Since y_i = γ*x̃_i + β, we have ∂y_i/∂x̃_i = γ
+    dx_norm = dout * gamma  # Shape: (N, D)
+    
+    # Gradient w.r.t. sample variance σ²_B
+    # x̃_i = x̂_i / √(σ²_B + ε), so ∂x̃_i/∂σ²_B = -½ * x̂_i * (σ²_B + ε)^(-3/2)
+    # ∂L/∂σ²_B = Σ(∂L/∂x̃_i * ∂x̃_i/∂σ²_B) = -½ * Σ(∂L/∂x̃_i * x̂_i) * (σ²_B + ε)^(-3/2)
+    dvar = np.sum(dx_norm * x_centered, axis=0) * -0.5 * np.power(sample_var + eps, -1.5)  # Shape: (D,)
+    
+    # Gradient w.r.t. x̂ (centered input)
+    # Two paths: direct through normalization and indirect through variance
+    # Path 1: ∂L/∂x̂ via normalization: ∂x̃_i/∂x̂_i = 1/√(σ²_B + ε)
+    # Path 2: ∂L/∂x̂ via variance: ∂σ²_B/∂x̂_i = 2*x̂_i/N (since σ²_B = (1/N)Σx̂_i²)
+    dx_centered = dx_norm / np.sqrt(sample_var + eps) + dvar * 2.0 * x_centered / N  # Shape: (N, D)
+    
+    # Gradient w.r.t. sample mean μ_B  
+    # x̂_i = x_i - μ_B, so ∂x̂_i/∂μ_B = -1
+    # ∂L/∂μ_B = Σ(∂L/∂x̂_i * ∂x̂_i/∂μ_B) = -Σ(∂L/∂x̂_i)
+    dmean = -np.sum(dx_centered, axis=0)  # Shape: (D,)
+    
+    # Gradient w.r.t. input x
+    # Two paths: direct through centering and indirect through mean
+    # Path 1: ∂L/∂x via centering: ∂x̂_i/∂x_i = 1  
+    # Path 2: ∂L/∂x via mean: ∂μ_B/∂x_i = 1/N (since μ_B = (1/N)Σx_i)
+    dx = dx_centered + dmean / N  # Shape: (N, D)
+    
+    # Mathematical summary of the computation graph:
+    # x → μ_B, σ²_B → x̂ → x̃ → y
+    # Gradients flow backward: ∂L/∂y → ∂L/∂x̃ → ∂L/∂x̂ → ∂L/∂x
+    #                                     ↓         ↓
+    #                                 ∂L/∂σ²_B → ∂L/∂μ_B
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -318,7 +377,47 @@ def batchnorm_backward_alt(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # Extract cached values from forward pass
+    x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps = cache
+    N, D = x.shape
+    
+    # Same gradients for β and γ as in standard implementation
+    # ∂L/∂β = Σ(∂L/∂y_i) - simple sum over all upstream gradients
+    dbeta = np.sum(dout, axis=0)  # Shape: (D,)
+    
+    # ∂L/∂γ = Σ(∂L/∂y_i * x̃_i) - weighted sum with normalized inputs
+    dgamma = np.sum(dout * x_norm, axis=0)  # Shape: (D,)
+    
+    # Gradient w.r.t. normalized inputs
+    # ∂L/∂x̃ = ∂L/∂y * γ
+    dx_norm = dout * gamma  # Shape: (N, D)
+    
+    # Simplified gradient w.r.t. centered inputs
+    # Mathematical derivation of the alternative formula:
+    # Let σ = √(σ²_B + ε), then x̃_i = x̂_i / σ
+    # 
+    # Working backward from x̃ to x̂:
+    # ∂L/∂x̂_i has two components:
+    # 1. Direct: ∂x̃_i/∂x̂_i = 1/σ
+    # 2. Through variance: ∂σ/∂x̂_i affects all x̃_j via σ
+    #
+    # The key insight: we can factor out common terms and simplify
+    # After algebraic manipulation, the gradient becomes:
+    # ∂L/∂x̂ = (1/σ) * [∂L/∂x̃ - (1/N)*Σ(∂L/∂x̃_j) - (1/N)*Σ(∂L/∂x̃_j * x̃_j)*x̃]
+    
+    # Alternative simplified formula:
+    dx_centered = (dx_norm - dx_norm.mean(axis=0) - x_norm * (dx_norm * x_norm).mean(axis=0)) / np.sqrt(sample_var + eps)
+    
+    # Final gradient w.r.t. input x
+    # From x̂_i = x_i - μ_B, we get:
+    # ∂L/∂x = ∂L/∂x̂ - (1/N) * Σ(∂L/∂x̂_j)  [chain rule through mean]
+    dx = dx_centered - dx_centered.mean(axis=0)
+    
+    # Mathematical explanation of the simplified formula:
+    # The key insight is that all the gradient paths through variance and mean
+    # can be combined into the compact expression above. This avoids computing
+    # intermediate gradients dvar and dmean separately, leading to a more
+    # efficient and numerically stable implementation.
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -364,7 +463,50 @@ def layernorm_forward(x, gamma, beta, ln_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # Key insight: Layer norm normalizes across features (axis=1) instead of samples (axis=0)
+    # We can transpose the input, apply batch norm logic, then transpose back!
+    # 
+    # Batch norm: normalize across samples for each feature
+    # Layer norm: normalize across features for each sample
+    # 
+    # Mathematical transformation:
+    # If we transpose x from (N,D) → (D,N), then:
+    # - Batch norm on transposed data normalizes across the N dimension 
+    # - This is equivalent to layer norm on original data across D dimension
+    
+    N, D = x.shape
+    
+    # Step 1: Transpose to convert layer norm → batch norm problem
+    # x.T shape: (D, N) - now each "sample" is a feature, each "feature" is a data point
+    x_T = x.T  # Shape: (D, N)
+    
+    # Step 2: Apply batch normalization logic on transposed data
+    # Compute mean and variance across the "batch" dimension (axis=0)
+    # This computes statistics across all data points for each feature
+    sample_mean = np.mean(x_T, axis=0)  # μ ∈ R^N, mean for each data point
+    sample_var = np.var(x_T, axis=0)    # σ² ∈ R^N, variance for each data point
+    
+    # Step 3: Normalize the transposed data
+    # x̂ = (x - μ) / √(σ² + ε)
+    x_T_centered = x_T - sample_mean     # Shape: (D, N)
+    x_T_norm = x_T_centered / np.sqrt(sample_var + eps)  # Shape: (D, N)
+    
+    # Step 4: Transpose back to original orientation
+    x_centered = x_T_centered.T          # Shape: (N, D)
+    x_norm = x_T_norm.T                  # Shape: (N, D)
+    
+    # Step 5: Apply learnable affine transformation
+    # y = γ ⊙ x̃ + β  (same as batch norm)
+    out = gamma * x_norm + beta          # Shape: (N, D)
+    
+    # Step 6: Cache values needed for backward pass
+    # Note: we store the non-transposed versions for easier backward computation
+    cache = (x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps)
+    
+    # Mathematical summary:
+    # Layer norm per sample: μᵢ = (1/D)Σⱼ xᵢⱼ, σ²ᵢ = (1/D)Σⱼ(xᵢⱼ - μᵢ)²
+    # Normalization: x̃ᵢⱼ = (xᵢⱼ - μᵢ) / √(σ²ᵢ + ε)
+    # Final output: yᵢⱼ = γⱼ * x̃ᵢⱼ + βⱼ
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
