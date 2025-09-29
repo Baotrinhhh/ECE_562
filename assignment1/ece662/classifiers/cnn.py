@@ -63,7 +63,26 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        C, H, W = input_dim
+        
+        # Convolutional layer weights and biases
+        # W1 shape: (num_filters, input_channels, filter_height, filter_width)
+        self.params['W1'] = weight_scale * np.random.randn(num_filters, C, filter_size, filter_size)
+        self.params['b1'] = np.zeros(num_filters)
+        
+        # After conv + 2x2 max pooling, spatial dimensions are H/2 x W/2
+        # First affine layer input size: num_filters * (H/2) * (W/2)
+        affine_input_size = num_filters * (H // 2) * (W // 2)
+        
+        # Hidden affine layer weights and biases
+        # W2 shape: (affine_input_size, hidden_dim)
+        self.params['W2'] = weight_scale * np.random.randn(affine_input_size, hidden_dim)
+        self.params['b2'] = np.zeros(hidden_dim)
+        
+        # Output affine layer weights and biases
+        # W3 shape: (hidden_dim, num_classes)
+        self.params['W3'] = weight_scale * np.random.randn(hidden_dim, num_classes)
+        self.params['b3'] = np.zeros(num_classes)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -102,7 +121,16 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # Forward pass: conv - relu - 2x2 max pool - affine - relu - affine - softmax
+        
+        # Layer 1: conv - relu - pool
+        out1, cache1 = conv_relu_pool_forward(X, W1, b1, conv_param, pool_param)
+        
+        # Layer 2: affine - relu  
+        out2, cache2 = affine_relu_forward(out1, W2, b2)
+        
+        # Layer 3: affine (output layer)
+        scores, cache3 = affine_forward(out2, W3, b3)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -125,7 +153,26 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # Compute softmax loss
+        loss, dscores = softmax_loss(scores, y)
+        
+        # Add L2 regularization to loss (factor of 0.5 as specified)
+        loss += 0.5 * self.reg * (np.sum(W1**2) + np.sum(W2**2) + np.sum(W3**2))
+        
+        # Backward pass
+        # Layer 3 (output affine layer)
+        dout2, grads['W3'], grads['b3'] = affine_backward(dscores, cache3)
+        
+        # Layer 2 (hidden affine-relu layer)
+        dout1, grads['W2'], grads['b2'] = affine_relu_backward(dout2, cache2)
+        
+        # Layer 1 (conv-relu-pool layer)
+        dX, grads['W1'], grads['b1'] = conv_relu_pool_backward(dout1, cache1)
+        
+        # Add L2 regularization to gradients
+        grads['W1'] += self.reg * W1
+        grads['W2'] += self.reg * W2
+        grads['W3'] += self.reg * W3
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
