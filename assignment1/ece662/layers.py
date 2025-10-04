@@ -28,9 +28,11 @@ def affine_forward(x, w, b):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    x_flat = x.reshape(x.shape[0] , -1) # x_flat \in R^{N x D}
+    # Flatten input: x in R^{N x d_1 x ... x d_k} -> x_flat in R^{N x D} where D = d_1 x ... x d_k
+    x_flat = x.reshape(x.shape[0], -1)
 
-    out = x_flat @ w + b # out = x_flat w + b \in R^{N x M}
+    # Affine transformation: out = x_flat @ w + b in R^{N x M}
+    out = x_flat @ w + b
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -63,13 +65,20 @@ def affine_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     N = x.shape[0]
-    x_flat = x.reshape(N, -1) # x_flat \in R^{N x D}
+    # Flatten input for gradient computation: x in R^{N x d_1 x ... x d_k} -> x_flat in R^{N x D}
+    x_flat = x.reshape(N, -1)
 
-    # dout = ∂L/∂out
-
-    dx = dout.dot(w.T).reshape(x.shape) # ∂L/∂x_flat = ∂L/∂out * ∂out/∂x_flat = dout * w^T
-    dw = x_flat.T.dot(dout) # ∂L/∂w = ∂L/∂out * ∂out/∂w = x^T * dout
-    db = dout.sum(axis = 0) # ∂L/∂b = ∂L/∂out * ∂out/∂b = dout^T * 1_N 
+    # Chain rule for affine layer gradients:
+    # Given: out = x_flat @ w + b, and upstream gradient dout = dL/dout
+    
+    # dL/dx = dL/dout @ dout/dx = dout @ w^T, then reshape to original x shape
+    dx = dout.dot(w.T).reshape(x.shape)
+    
+    # dL/dw = dL/dout @ dout/dw = x_flat^T @ dout
+    dw = x_flat.T.dot(dout)
+    
+    # dL/db = dL/dout @ dout/db = sum(dout) over batch dimension
+    db = dout.sum(axis=0)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -95,8 +104,8 @@ def relu_forward(x):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
+    # ReLU activation: f(x) = max(0, x)
     out = np.maximum(0, x)
-    
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -123,7 +132,9 @@ def relu_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    dx = dout*(x > 0)
+    # ReLU derivative: f'(x) = 1 if x > 0, else 0
+    # Apply chain rule: dL/dx = dL/dout * dout/dx = dout * (x > 0)
+    dx = dout * (x > 0)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -204,32 +215,32 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
         # Compute sample mean and variance over the minibatch
-        # μ_B = (1/m) * Σ_{i=1}^m x_i   where m = N (batch size)
-        sample_mean = np.mean(x, axis=0)  # μ_B ∈ R^D, Shape: (D,)
-        
-        # σ²_B = (1/m) * Σ_{i=1}^m (x_i - μ_B)²
-        sample_var = np.var(x, axis=0)    # σ²_B ∈ R^D, Shape: (D,)
-        
+        # mu_B = (1/m) * sum_{i=1}^m x_i   where m = N (batch size)
+        sample_mean = np.mean(x, axis=0)  # mu_B in R^D, Shape: (D,)
+
+        # sigma^2_B = (1/m) * sum_{i=1}^m (x_i - mu_B)^2
+        sample_var = np.var(x, axis=0)    # sigma^2_B in R^D, Shape: (D,)
+
         # Center the data
-        # x̂_i = x_i - μ_B
-        x_centered = x - sample_mean      # x̂ ∈ R^{N×D}, Shape: (N, D)
+        # x_hat_i = x_i - mu_B
+        x_centered = x - sample_mean      # x_hat in R^{NxD}, Shape: (N, D)
         
         # Normalize by standard deviation
-        # x̃_i = x̂_i / √(σ²_B + ε) = (x_i - μ_B) / √(σ²_B + ε)
-        x_norm = x_centered / np.sqrt(sample_var + eps)  # x̃ ∈ R^{N×D}, Shape: (N, D)
+        # x_tilde_i = x_hat_i / sqrt(sigma^2_B + eps) = (x_i - mu_B) / sqrt(sigma^2_B + eps)
+        x_norm = x_centered / np.sqrt(sample_var + eps)  # x_tilde in R^{NxD}, Shape: (N, D)
         
         # Scale and shift (learnable affine transformation)
-        # y_i = γ * x̃_i + β   
-        out = gamma * x_norm + beta       # y ∈ R^{N×D}, Shape: (N, D)
+        # y_i = gamma * x_tilde_i + beta   
+        out = gamma * x_norm + beta       # y in R^{NxD}, Shape: (N, D)
         
         #  Update running statistics using exponential moving average
-        # μ_running ← α·μ_running + (1-α)·μ_B   where α = momentum
-        # σ²_running ← α·σ²_running + (1-α)·σ²_B
+        # mu_running <- alpha*mu_running + (1-alpha)*mu_B   where alpha = momentum
+        # sigma^2_running <- alpha*sigma^2_running + (1-alpha)*sigma^2_B
         running_mean = momentum * running_mean + (1 - momentum) * sample_mean
         running_var = momentum * running_var + (1 - momentum) * sample_var
         
         # Cache intermediate values for backward pass computation
-        # Need: x, x̂, x̃, μ_B, σ²_B, γ, β, ε for gradient calculations
+        # Need: x, x_hat, x_tilde, mu_B, sigma²_B, gamma, beta, eps for gradient calculations
         cache = (x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -247,11 +258,11 @@ def batchnorm_forward(x, gamma, beta, bn_param):
 
         # Test-time batch normalization uses pre-computed running statistics
         # Normalize using running statistics
-        # x̃_i = (x_i - μ_running) / √(σ²_running + ε)
+        # x_tilde_i = (x_i - mu_running) / sqrt(sigma²_running + eps)
         x_norm = (x - running_mean) / np.sqrt(running_var + eps)
         
         # Apply learnable affine transformation
-        # y_i = γ * x̃_i + β
+        # y_i = gamma * x_tilde_i + beta
         out = gamma * x_norm + beta
         
         # No cache needed for test mode 
@@ -301,48 +312,48 @@ def batchnorm_backward(dout, cache):
     x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps = cache
     N, D = x.shape
     
-    # Gradient w.r.t. β (bias parameter)
-    # ∂L/∂β = ∂L/∂y * ∂y/∂β = ∂L/∂y * 1 = Σ(∂L/∂y_i) over all i
-    # Since y_i = γ*x̃_i + β, we have ∂y_i/∂β = 1
+    # Gradient w.r.t. beta (bias parameter)
+    # dL/dbeta = dL/dy * dy/dbeta = dL/dy * 1 = sum(dL/dy_i) over all i
+    # Since y_i = gamma*x_tilde_i + beta, we have dy_i/dbeta = 1
     dbeta = np.sum(dout, axis=0)  # Shape: (D,)
     
-    # Gradient w.r.t. γ (scale parameter)  
-    # ∂L/∂γ = ∂L/∂y * ∂y/∂γ = ∂L/∂y * x̃ = Σ(∂L/∂y_i * x̃_i) over all i
-    # Since y_i = γ*x̃_i + β, we have ∂y_i/∂γ = x̃_i
+    # Gradient w.r.t. gamma (scale parameter)  
+    # dL/dgamma = dL/dy * dy/dgamma = dL/dy * x_tilde = sum(dL/dy_i * x_tilde_i) over all i
+    # Since y_i = gamma*x_tilde_i + beta, we have dy_i/dgamma = x_tilde_i
     dgamma = np.sum(dout * x_norm, axis=0)  # Shape: (D,)
     
-    # Gradient w.r.t. x̃ (normalized input)
-    # ∂L/∂x̃ = ∂L/∂y * ∂y/∂x̃ = ∂L/∂y * γ
-    # Since y_i = γ*x̃_i + β, we have ∂y_i/∂x̃_i = γ
+    # Gradient w.r.t. x_tilde (normalized input)
+    # dL/dx_tilde = dL/dy * dy/dx_tilde = dL/dy * gamma
+    # Since y_i = gamma*x_tilde_i + beta, we have dy_i/dx_tilde_i = gamma
     dx_norm = dout * gamma  # Shape: (N, D)
     
-    # Gradient w.r.t. sample variance σ²_B
-    # x̃_i = x̂_i / √(σ²_B + ε), so ∂x̃_i/∂σ²_B = -½ * x̂_i * (σ²_B + ε)^(-3/2)
-    # ∂L/∂σ²_B = Σ(∂L/∂x̃_i * ∂x̃_i/∂σ²_B) = -½ * Σ(∂L/∂x̃_i * x̂_i) * (σ²_B + ε)^(-3/2)
+    # Gradient w.r.t. sample variance sigma^2_B
+    # x_tilde_i = x_hat_i / sqrt(sigma^2_B + eps), so dx_tilde_i/dsigma^2_B = -1/2 * x_hat_i * (sigma^2_B + eps)^(-3/2)
+    # dL/dsigma^2_B = sum(dL/dx_tilde_i * dx_tilde_i/dsigma^2_B) = -1/2 * sum(dL/dx_tilde_i * x_hat_i) * (sigma^2_B + eps)^(-3/2)
     dvar = np.sum(dx_norm * x_centered, axis=0) * -0.5 * np.power(sample_var + eps, -1.5)  # Shape: (D,)
     
-    # Gradient w.r.t. x̂ (centered input)
+    # Gradient w.r.t. x_hat (centered input)
     # Two paths: direct through normalization and indirect through variance
-    # Path 1: ∂L/∂x̂ via normalization: ∂x̃_i/∂x̂_i = 1/√(σ²_B + ε)
-    # Path 2: ∂L/∂x̂ via variance: ∂σ²_B/∂x̂_i = 2*x̂_i/N (since σ²_B = (1/N)Σx̂_i²)
+    # Path 1: dL/dx_hat via normalization: dx_tilde_i/dx_hat_i = 1/sqrt(sigma^2_B + eps)
+    # Path 2: dL/dx_hat via variance: dsigma^2_B/dx_hat_i = 2*x_hat_i/N (since sigma^2_B = (1/N)*sum(x_hat_i^2))
     dx_centered = dx_norm / np.sqrt(sample_var + eps) + dvar * 2.0 * x_centered / N  # Shape: (N, D)
     
-    # Gradient w.r.t. sample mean μ_B  
-    # x̂_i = x_i - μ_B, so ∂x̂_i/∂μ_B = -1
-    # ∂L/∂μ_B = Σ(∂L/∂x̂_i * ∂x̂_i/∂μ_B) = -Σ(∂L/∂x̂_i)
+    # Gradient w.r.t. sample mean mu_B  
+    # x_hat_i = x_i - mu_B, so dx_hat_i/dmu_B = -1
+    # dL/dmu_B = sum(dL/dx_hat_i * dx_hat_i/dmu_B) = -sum(dL/dx_hat_i)
     dmean = -np.sum(dx_centered, axis=0)  # Shape: (D,)
     
     # Gradient w.r.t. input x
     # Two paths: direct through centering and indirect through mean
-    # Path 1: ∂L/∂x via centering: ∂x̂_i/∂x_i = 1  
-    # Path 2: ∂L/∂x via mean: ∂μ_B/∂x_i = 1/N (since μ_B = (1/N)Σx_i)
+    # Path 1: dL/dx via centering: dx_hat_i/dx_i = 1  
+    # Path 2: dL/dx via mean: dmu_B/dx_i = 1/N (since mu_B = (1/N)*sum(x_i))
     dx = dx_centered + dmean / N  # Shape: (N, D)
     
     # Mathematical summary of the computation graph:
-    # x → μ_B, σ²_B → x̂ → x̃ → y
-    # Gradients flow backward: ∂L/∂y → ∂L/∂x̃ → ∂L/∂x̂ → ∂L/∂x
-    #                                     ↓         ↓
-    #                                 ∂L/∂σ²_B → ∂L/∂μ_B
+    # x -> mu_B, sigma²_B -> x_hat -> x_tilde -> y
+    # Gradients flow backward: dL/dy -> dL/dx_tilde -> dL/dx_hat -> dL/dx
+    #                                     |         |
+    #                                 dL/dsigma²_B -> dL/dmu_B
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -381,36 +392,36 @@ def batchnorm_backward_alt(dout, cache):
     x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps = cache
     N, D = x.shape
     
-    # Same gradients for β and γ as in standard implementation
-    # ∂L/∂β = Σ(∂L/∂y_i) - simple sum over all upstream gradients
+    # Same gradients for beta and gamma as in standard implementation
+    # dL/dbeta = sum(dL/dy_i) - simple sum over all upstream gradients
     dbeta = np.sum(dout, axis=0)  # Shape: (D,)
     
-    # ∂L/∂γ = Σ(∂L/∂y_i * x̃_i) - weighted sum with normalized inputs
+    # dL/dgamma = sum(dL/dy_i * x_tilde_i) - weighted sum with normalized inputs
     dgamma = np.sum(dout * x_norm, axis=0)  # Shape: (D,)
     
     # Gradient w.r.t. normalized inputs
-    # ∂L/∂x̃ = ∂L/∂y * γ
+    # dL/dx_tilde = dL/dy * gamma
     dx_norm = dout * gamma  # Shape: (N, D)
     
     # Simplified gradient w.r.t. centered inputs
     # Mathematical derivation of the alternative formula:
-    # Let σ = √(σ²_B + ε), then x̃_i = x̂_i / σ
+    # Let sigma = sqrt(sigma²_B + eps), then x_tilde_i = x_hat_i / sigma
     # 
-    # Working backward from x̃ to x̂:
-    # ∂L/∂x̂_i has two components:
-    # 1. Direct: ∂x̃_i/∂x̂_i = 1/σ
-    # 2. Through variance: ∂σ/∂x̂_i affects all x̃_j via σ
+    # Working backward from x_tilde to x_hat:
+    # dL/dx_hat_i has two components:
+    # 1. Direct: dx_tilde_i/dx_hat_i = 1/sigma
+    # 2. Through variance: dsigma/dx_hat_i affects all x_tilde_j via sigma
     #
     # The key insight: we can factor out common terms and simplify
     # After algebraic manipulation, the gradient becomes:
-    # ∂L/∂x̂ = (1/σ) * [∂L/∂x̃ - (1/N)*Σ(∂L/∂x̃_j) - (1/N)*Σ(∂L/∂x̃_j * x̃_j)*x̃]
+    # dL/dx_hat = (1/sigma) * [dL/dx_tilde - (1/N)*sum(dL/dx_tilde_j) - (1/N)*sum(dL/dx_tilde_j * x_tilde_j)*x_tilde]
     
     # Alternative simplified formula:
     dx_centered = (dx_norm - dx_norm.mean(axis=0) - x_norm * (dx_norm * x_norm).mean(axis=0)) / np.sqrt(sample_var + eps)
     
     # Final gradient w.r.t. input x
-    # From x̂_i = x_i - μ_B, we get:
-    # ∂L/∂x = ∂L/∂x̂ - (1/N) * Σ(∂L/∂x̂_j)  [chain rule through mean]
+    # From x_hat_i = x_i - mu_B, we get:
+    # dL/dx = dL/dx_hat - (1/N) * sum(dL/dx_hat_j)  [chain rule through mean]
     dx = dx_centered - dx_centered.mean(axis=0)
     
     # Mathematical explanation of the simplified formula:
@@ -483,11 +494,11 @@ def layernorm_forward(x, gamma, beta, ln_param):
     # Apply batch normalization logic on transposed data
     # Compute mean and variance across the "batch" dimension (axis=0)
     # This computes statistics across all data points for each feature
-    sample_mean = np.mean(x_T, axis=0)  # μ ∈ R^N, mean for each data point
-    sample_var = np.var(x_T, axis=0)    # σ² ∈ R^N, variance for each data point
+    sample_mean = np.mean(x_T, axis=0)  # mu in R^N, mean for each data point
+    sample_var = np.var(x_T, axis=0)    # sigma² in R^N, variance for each data point
     
     # Normalize the transposed data
-    # x̂ = (x - μ) / √(σ² + ε)
+    # x_hat = (x - mu) / sqrt(sigma² + eps)
     x_T_centered = x_T - sample_mean     # Shape: (D, N)
     x_T_norm = x_T_centered / np.sqrt(sample_var + eps)  # Shape: (D, N)
     
@@ -496,7 +507,7 @@ def layernorm_forward(x, gamma, beta, ln_param):
     x_norm = x_T_norm.T                  # Shape: (N, D)
     
     # Apply learnable affine transformation
-    # y = γ * x̃ + β  (same as batch norm)
+    # y = gamma * x_tilde + beta  (same as batch norm)
     out = gamma * x_norm + beta          # Shape: (N, D)
     
     # Cache values needed for backward pass
@@ -504,9 +515,9 @@ def layernorm_forward(x, gamma, beta, ln_param):
     cache = (x, x_centered, x_norm, sample_mean, sample_var, gamma, beta, eps)
     
     # Mathematical summary:
-    # Layer norm per sample: μᵢ = (1/D)Σⱼ xᵢⱼ, σ²ᵢ = (1/D)Σⱼ(xᵢⱼ - μᵢ)²
-    # Normalization: x̃ᵢⱼ = (xᵢⱼ - μᵢ) / √(σ²ᵢ + ε)
-    # Final output: yᵢⱼ = γⱼ * x̃ᵢⱼ + βⱼ
+    # Layer norm per sample: mu_i = (1/D)*sum_j x_ij, sigma²_i = (1/D)*sum_j(x_ij - mu_i)²
+    # Normalization: x_tilde_ij = (x_ij - mu_i) / sqrt(sigma²_i + eps)
+    # Final output: y_ij = gamma_j * x_tilde_ij + beta_j
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -549,20 +560,19 @@ def layernorm_backward(dout, cache):
     # Layer norm normalizes across features (D) for each sample (N)
     # We can transpose and use batch norm backward logic, then transpose back
     
-    # Gradient w.r.t. β (shift parameter)
-    # ∂L/∂β = ∂L/∂y * ∂y/∂β = ∂L/∂y * 1 = Σ(∂L/∂y_i) over all samples
-    # Since y_ij = γ_j * x̃_ij + β_j, we have ∂y_ij/∂β_j = 1
+    # Gradient w.r.t. beta (shift parameter)
+    # dL/dbeta = dL/dy * dy/dbeta = dL/dy * 1 = sum(dL/dy_i) over all samples
+    # Since y_ij = gamma_j * x_tilde_ij + beta_j, we have dy_ij/dbeta_j = 1
     dbeta = np.sum(dout, axis=0)  # Shape: (D,)
     
-    # Gradient w.r.t. γ (scale parameter)
-    # ∂L/∂γ = ∂L/∂y * ∂y/∂γ = ∂L/∂y * x̃ = Σ(∂L/∂y_ij * x̃_ij) over all samples
-    # Since y_ij = γ_j * x̃_ij + β_j, we have ∂y_ij/∂γ_j = x̃_ij
+    # Gradient w.r.t. gamma (scale parameter)
+    # dL/dgamma = dL/dy * dy/dgamma = dL/dy * x_tilde = sum(dL/dy_ij * x_tilde_ij) over all samples
+    # Since y_ij = gamma_j * x_tilde_ij + beta_j, we have dy_ij/dgamma_j = x_tilde_ij
     dgamma = np.sum(dout * x_norm, axis=0)  # Shape: (D,)
     
     # For dx, we need to apply the transpose trick
     # Transpose dout and apply batch norm backward logic, then transpose back
     dout_T = dout.T  # Shape: (D, N)
-    x_norm_T = x_norm.T  # Shape: (D, N)
     x_centered_T = x_centered.T  # Shape: (D, N)
     
     # Apply batch norm backward logic on transposed data
@@ -570,8 +580,8 @@ def layernorm_backward(dout, cache):
     dx_norm_T = dout_T * gamma[:, np.newaxis]  # Shape: (D, N), broadcast gamma
     
     # Gradient w.r.t. variance (for each sample, computed across features)
-    # In layer norm: σ²_i = (1/D) * Σⱼ (x_ij - μ_i)² 
-    # ∂σ²_i/∂x̂_ij = 2*x̂_ij/D
+    # In layer norm: sigma^2_i = (1/D) * sum_j (x_ij - mu_i)^2
+    # dsigma^2_i/dx_hat_ij = 2*x_hat_ij/D
     dvar_T = np.sum(dx_norm_T * x_centered_T, axis=0) * -0.5 * np.power(sample_var + eps, -1.5)  # Shape: (N,)
     
     # Gradient w.r.t. centered input (transposed)
@@ -580,8 +590,8 @@ def layernorm_backward(dout, cache):
     dx_centered_T = dx_norm_T / np.sqrt(sample_var + eps) + dvar_T * 2.0 * x_centered_T / D  # Shape: (D, N)
     
     # Gradient w.r.t. mean (for each sample, computed across features)
-    # In layer norm: μ_i = (1/D) * Σⱼ x_ij
-    # ∂μ_i/∂x_ij = 1/D
+    # In layer norm: mu_i = (1/D) * sum_j x_ij
+    # dmu_i/dx_ij = 1/D
     dmean_T = -np.sum(dx_centered_T, axis=0)  # Shape: (N,)
     
     # Final gradient w.r.t. input (transposed)
@@ -593,9 +603,9 @@ def layernorm_backward(dout, cache):
     dx = dx_T.T  # Shape: (N, D)
     
     # Mathematical summary for layer normalization:
-    # For each sample i: μᵢ = (1/D)Σⱼ xᵢⱼ, σ²ᵢ = (1/D)Σⱼ(xᵢⱼ - μᵢ)²
-    # Normalization: x̃ᵢⱼ = (xᵢⱼ - μᵢ) / √(σ²ᵢ + ε)
-    # Output: yᵢⱼ = γⱼ * x̃ᵢⱼ + βⱼ
+    # For each sample i: mu_i = (1/D)*sum_j x_ij, sigma^2_i = (1/D)*sum_j(x_ij - mu_i)²
+    # Normalization: x_tilde_ij = (x_ij - mu_i) / sqrt(sigma^2_i + eps)
+    # Output: y_ij = gamma_j * x_tilde_ij + beta_j
     # The transpose trick allows us to reuse batch norm backward computation
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -700,7 +710,9 @@ def dropout_backward(dout, cache):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-         dx = dout * mask / dropout_param["p"]
+        # Apply the same mask and scaling as forward pass
+        # Chain rule: dL/dx = dL/dout * dout/dx = dout * mask / p
+        dx = dout * mask / dropout_param["p"]
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -746,23 +758,36 @@ def conv_forward_naive(x, w, b, conv_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    P1 = P2 = P3 = P4 = conv_param['pad'] # padding: up = right = down = left
-    S1 = S2 = conv_param['stride']        # stride:  up = down
-    N, C, HI, WI = x.shape                # input dims  
-    F, _, HF, WF = w.shape                # filter dims
-    HO = 1 + (HI + P1 + P3 - HF) // S1    # output height      
-    WO = 1 + (WI + P2 + P4 - WF) // S2    # output width  
-
-    # Use numpy's sliding_window_view to create a view of all receptive fields
-    to_fields = lambda x: np.lib.stride_tricks.sliding_window_view(x, (WF,HF,C,N))
-
-    w_row = w.reshape(F, -1)                                            # flatten weight filters
-    x_pad = np.pad(x, ((0,0), (0,0), (P1, P3), (P2, P4)), 'constant')   # padded inputs
-    x_col = to_fields(x_pad.T).T[...,::S1,::S2].reshape(N, C*HF*WF, -1) # flattened input fields 
-
-    out = (w_row @ x_col).reshape(N, F, HO, WO) + np.expand_dims(b, axis=(2,1)) # result after the convolution + bias
+    # Extract convolution parameters
+    pad = conv_param['pad']
+    stride = conv_param['stride']
     
-    x = x_pad # we will use padded version as well during backpropagation
+    # Input and filter dimensions
+    N, C, H_in, W_in = x.shape    # input: (batch_size, channels, height, width)
+    F, _, H_filter, W_filter = w.shape  # filters: (num_filters, channels, height, width)
+    
+    # Calculate output dimensions using convolution formula
+    H_out = 1 + (H_in + 2 * pad - H_filter) // stride
+    W_out = 1 + (W_in + 2 * pad - W_filter) // stride
+
+    # Helper function to create sliding window views for efficient convolution
+    create_windows = lambda x: np.lib.stride_tricks.sliding_window_view(x, (W_filter, H_filter, C, N))
+
+    # Reshape filters to matrix form for efficient computation: (F, C*H_filter*W_filter)
+    w_matrix = w.reshape(F, -1)
+    
+    # Apply zero padding to input: (N, C, H_in+2*pad, W_in+2*pad)
+    x_padded = np.pad(x, ((0, 0), (0, 0), (pad, pad), (pad, pad)), 'constant')
+    
+    # Create column matrix from input windows: (N, C*H_filter*W_filter, H_out*W_out)
+    x_windows = create_windows(x_padded.T).T[..., ::stride, ::stride].reshape(N, C*H_filter*W_filter, -1)
+
+    # Perform convolution: w_matrix @ x_windows + bias
+    # Result shape: (N, F, H_out, W_out)
+    out = (w_matrix @ x_windows).reshape(N, F, H_out, W_out) + np.expand_dims(b, axis=(2, 1))
+    
+    # Store padded input for backward pass
+    x = x_padded
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -791,26 +816,35 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    # Use numpy's sliding_window_view to create a view of all receptive fields
-    to_fields = np.lib.stride_tricks.sliding_window_view
+    # Helper function for creating sliding window views
+    create_windows = np.lib.stride_tricks.sliding_window_view
 
-    x_pad, w, b, conv_param = cache       # extract parameters from cache
-    S1 = S2 = conv_param['stride']        # stride:  up = down
-    P1 = P2 = P3 = P4 = conv_param['pad'] # padding: up = right = down = left
-    F, C, HF, WF = w.shape                # filter dims
-    N, _, HO, WO = dout.shape             # output dims
+    # Extract cached parameters
+    x_padded, w, b, conv_param = cache
+    stride = conv_param['stride']
+    pad = conv_param['pad']
+    F, C, H_filter, W_filter = w.shape
+    N, _, H_out, W_out = dout.shape
     
-    dout = np.insert(dout, [*range(1, HO)] * (S1-1), 0, axis=2)         # "missing" rows
-    dout = np.insert(dout, [*range(1, WO)] * (S2-1), 0, axis=3)         # "missing" columns
-    dout_pad = np.pad(dout, ((0,), (0,), (HF-1,), (WF-1,)), 'constant') # for full convolution
+    # Upsample dout by inserting zeros for strided convolution
+    # Insert (stride-1) zeros between each element to "undo" the stride
+    dout_upsampled = np.insert(dout, [*range(1, H_out)] * (stride-1), 0, axis=2)  # rows
+    dout_upsampled = np.insert(dout_upsampled, [*range(1, W_out)] * (stride-1), 0, axis=3)  # columns
+    
+    # Pad dout for full convolution (correlation actually)
+    dout_padded = np.pad(dout_upsampled, ((0,), (0,), (H_filter-1,), (W_filter-1,)), 'constant')
 
-    x_fields = to_fields(x_pad, (N, C, dout.shape[2], dout.shape[3]))   # input local regions w.r.t. dout
-    dout_fields = to_fields(dout_pad, (N, F, HF, WF))                   # dout local regions w.r.t. filter 
-    w_rot = np.rot90(w, 2, axes=(2, 3))                                 # rotated kernel (for convolution)
+    # Create sliding window views for gradient computation
+    x_windows = create_windows(x_padded, (N, C, dout_upsampled.shape[2], dout_upsampled.shape[3]))
+    dout_windows = create_windows(dout_padded, (N, F, H_filter, W_filter))
+    
+    # Rotate weights 180 degrees for convolution (equivalent to correlation with flipped kernel)
+    w_rotated = np.rot90(w, 2, axes=(2, 3))
 
-    db = np.einsum('ijkl->j', dout)                                                # sum over
-    dw = np.einsum('ijkl,mnopiqkl->jqop', dout, x_fields)                          # correlate
-    dx = np.einsum('ijkl,mnopqikl->qjop', w_rot, dout_fields)[..., P1:-P3, P2:-P4] # convolve
+    # Compute gradients using Einstein summation notation
+    db = np.einsum('ijkl->j', dout)  # Sum over all dimensions except filter dimension
+    dw = np.einsum('ijkl,mnopiqkl->jqop', dout_upsampled, x_windows)  # Cross-correlation
+    dx = np.einsum('ijkl,mnopqikl->qjop', w_rotated, dout_windows)[..., pad:-pad, pad:-pad]  # Convolution
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -844,18 +878,27 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    S1 = S2 = pool_param['stride'] # stride: up = down
-    HP = pool_param['pool_height'] # pool height
-    WP = pool_param['pool_width']  # pool width
-    N, C, HI, WI = x.shape         # input dims
-    HO = 1 + (HI - HP) // S1       # output height
-    WO = 1 + (WI - WP) // S2       # output width
+    # Extract pooling parameters
+    stride = pool_param['stride']
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    
+    # Input dimensions
+    N, C, H_in, W_in = x.shape
+    
+    # Calculate output dimensions using pooling formula
+    H_out = 1 + (H_in - pool_height) // stride
+    W_out = 1 + (W_in - pool_width) // stride
 
-    # Helper function (warning: numpy version 1.20 or above is required for usage)
-    to_fields = lambda x: np.lib.stride_tricks.sliding_window_view(x, (WP,HP,C,N))
+    # Helper function to create sliding window views (requires numpy >= 1.20)
+    create_windows = lambda x: np.lib.stride_tricks.sliding_window_view(x, (pool_width, pool_height, C, N))
 
-    x_fields = to_fields(x.T).T[...,::S1,::S2].reshape(N, C, HP*WP, -1) # input local regions
-    out = x_fields.max(axis=2).reshape(N, C, HO, WO)                    # pooled output
+    # Create sliding windows and apply max pooling
+    # Shape after windowing: (N, C, pool_height*pool_width, H_out*W_out)
+    x_windows = create_windows(x.T).T[..., ::stride, ::stride].reshape(N, C, pool_height*pool_width, -1)
+    
+    # Take maximum over each pooling window and reshape to output dimensions
+    out = x_windows.max(axis=2).reshape(N, C, H_out, W_out)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -882,20 +925,35 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    x, pool_param = cache     # expand cache
-    N, C, HO, WO = dout.shape # get shape values
-    dx = np.zeros_like(x)     # init derivative
+    # Extract cached parameters
+    x, pool_param = cache
+    N, C, H_out, W_out = dout.shape
+    dx = np.zeros_like(x)  # Initialize gradient tensor
 
-    S1 = S2 = pool_param['stride'] # stride: up = down
-    HP = pool_param['pool_height'] # pool height
-    WP = pool_param['pool_width']  # pool width
+    # Extract pooling parameters  
+    stride = pool_param['stride']
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
 
-    for i in range(HO):
-        for j in range(WO):
-            [ns, cs], h, w = np.indices((N, C)), i*S1, j*S2    # compact indexing
-            f = x[:, :, h:(h+HP), w:(w+WP)].reshape(N, C, -1)  # input local fields
-            k, l = np.unravel_index(np.argmax(f, 2), (HP, WP)) # offsets for max vals
-            dx[ns, cs, h+k, w+l] += dout[ns, cs, i, j]         # select areas to update
+    # Iterate through each position in the output feature map
+    for i in range(H_out):
+        for j in range(W_out):
+            # Calculate input window coordinates
+            h_start, w_start = i * stride, j * stride
+            h_end, w_end = h_start + pool_height, w_start + pool_width
+            
+            # Create index arrays for batch and channel dimensions
+            batch_indices, channel_indices = np.indices((N, C))
+            
+            # Extract the pooling window from input
+            pool_window = x[:, :, h_start:h_end, w_start:w_end].reshape(N, C, -1)
+            
+            # Find the index of maximum value in each pooling window
+            max_indices = np.argmax(pool_window, axis=2)
+            max_h, max_w = np.unravel_index(max_indices, (pool_height, pool_width))
+            
+            # Propagate gradient only to the maximum element in each window
+            dx[batch_indices, channel_indices, h_start + max_h, w_start + max_w] += dout[batch_indices, channel_indices, i, j]
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
